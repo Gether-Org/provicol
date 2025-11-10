@@ -13,6 +13,26 @@ type middleWareCallBack func(*Responder, ...any) error
 type Listener struct {
     conn     net.Conn
     megaMap  map[askingBytecode]middleWareCallBack
+	responder *Responder
+}
+
+func ListenerWithPath(socketPath string) (*Listener, error) {
+    conn, err := net.Dial("unix", socketPath)
+    if err != nil {
+        return nil, err
+    }
+
+    listener := &Listener{
+        conn:    conn,
+        megaMap: make(map[askingBytecode]middleWareCallBack),
+        responder: &Responder{
+            conn:   conn,
+            buffer: make([]any, 0),
+            sendCh: make(chan struct{}, 1),
+        },
+    }
+
+    return listener, nil
 }
 
 func (l *Listener) Bind(op askingBytecode, f middleWareCallBack) {
@@ -38,7 +58,6 @@ func (l *Listener) Listen() error {
         opcode := askingBytecode(data[0])
         payload := data[1:]
 
-        responder := &Responder{conn: l.conn}
         if cb, ok := l.megaMap[opcode]; ok {
             var args []any
             if len(payload) > 0 {
@@ -50,7 +69,7 @@ func (l *Listener) Listen() error {
                     args = append(args, arg)
                 }
             }
-            cb(responder, args...)
+            cb(l.responder, args...)
         }
     }
 }
