@@ -8,62 +8,60 @@ import (
 	"sync"
 )
 
+type void struct{}
+
 type Responder struct {
-    conn   net.Conn
-    mu     sync.Mutex
-    buffer []any           // accumulate responses
-    sendCh chan struct{}   // signal pour envoyer le paquet
+	conn   *net.Conn
+	mu     sync.Mutex
+	buffer []any
+	sendCh chan void
 }
 
-func NewResponder(conn net.Conn) *Responder {
-    r := &Responder{
-        conn:   conn,
-        buffer: make([]any, 0),
-        sendCh: make(chan struct{}, 1),
-    }
-    go r.flusher() // goroutine qui écoute les flush
-    return r
+func newResponder(conn *net.Conn) (*Responder) {
+	r := &Responder{
+		buffer: make([]any, 0),
+		conn:   conn,
+		sendCh: make(chan void, 1),
+	}
+	go r.flusher()
+	return r
 }
 
-// Reply n'envoie pas directement, juste stocke
 func (r *Responder) Reply(x any) {
-    r.mu.Lock()
-    r.buffer = append(r.buffer, x)
-    r.mu.Unlock()
+	r.mu.Lock()
+	r.buffer = append(r.buffer, x)
+	r.mu.Unlock()
 }
 
-// Flush force l'envoi
 func (r *Responder) Flush() {
-    select {
-    case r.sendCh <- struct{}{}:
-    default: // évite de bloquer si un flush est déjà en attente
-    }
+	select {
+	case r.sendCh <- void{}:
+	default:
+	}
 }
 
-// flusher écoute les flushs et envoie un paquet unique
 func (r *Responder) flusher() {
-    for range r.sendCh {
-        r.mu.Lock()
-        if len(r.buffer) == 0 {
-            r.mu.Unlock()
-            continue
-        }
+	for range r.sendCh {
+		r.mu.Lock()
+		if len(r.buffer) == 0 {
+			r.mu.Unlock()
+			continue
+		}
 
-        var buf bytes.Buffer
-        enc := gob.NewEncoder(&buf)
-        for _, v := range r.buffer {
-            if err := enc.Encode(v); err != nil {
-                // log ou ignore
-                continue
-            }
-        }
+		var buf bytes.Buffer
+		enc := gob.NewEncoder(&buf)
+		for _, v := range r.buffer {
+			if err := enc.Encode(v); err != nil {
+				continue
+			}
+		}
 
-        size := uint32(buf.Len())
-        sizeBuf := make([]byte, 4)
-        binary.BigEndian.PutUint32(sizeBuf, size)
+		size := uint32(buf.Len())
+		sizeBuf := make([]byte, 4)
+		binary.BigEndian.PutUint32(sizeBuf, size)
 
-        r.conn.Write(append(sizeBuf, buf.Bytes()...))
-        r.buffer = nil // clear buffer
-        r.mu.Unlock()
-    }
+		(*r.conn).Write(append(sizeBuf, buf.Bytes()...))
+		r.buffer = nil
+		r.mu.Unlock()
+	}
 }
