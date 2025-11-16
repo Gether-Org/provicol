@@ -23,8 +23,8 @@ func NewChild(socketPath string) (*Child, error) {
 	}
 
 	child := &Child{
-		conn:    conn,
-		megaMap: make(map[askingBytecode]middleWareCallBack),
+		conn:      conn,
+		megaMap:   make(map[askingBytecode]middleWareCallBack),
 		responder: newResponder(&conn),
 	}
 	return child, nil
@@ -57,14 +57,12 @@ func (l *Child) Listen() error {
 		payload := data[1:]
 
 		if cb, ok := l.megaMap[opcode]; ok {
+			buf := bytes.NewBuffer(payload)
+			dec := gob.NewDecoder(buf)
+
 			var args []any
-			if len(payload) > 0 {
-				buf := bytes.NewBuffer(payload)
-				dec := gob.NewDecoder(buf)
-				var arg any
-				if err := dec.Decode(&arg); err == nil {
-					args = append(args, arg)
-				}
+			if err := dec.Decode(&args); err != nil {
+				return err
 			}
 
 			if err := cb(l.responder, args...); err != nil {
@@ -76,3 +74,6 @@ func (l *Child) Listen() error {
 	}
 }
 
+func (c *Child) Close() error {
+	return c.conn.Close()
+}

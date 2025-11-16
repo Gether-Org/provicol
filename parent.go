@@ -16,7 +16,7 @@ type Parent struct {
 	conn net.Conn
 }
 
-func NewParent(socketPath string) (*Parent, error) {
+func NewParent(socketPath string, perms os.FileMode) (*Parent, error) {
     var err error
     p := &Parent{}
     _ = os.Remove(socketPath)
@@ -25,7 +25,9 @@ func NewParent(socketPath string) (*Parent, error) {
 	if err != nil {
 		return nil, err
 	}
-	os.Chmod(socketPath, 0777)
+	if err := os.Chmod(socketPath, perms); err != nil {
+		return nil, err
+	}
 
 	p.conn, err = p.sock.Accept()
 	if err != nil {
@@ -35,19 +37,21 @@ func NewParent(socketPath string) (*Parent, error) {
 }
 
 func (m *Parent) Ask(op askingBytecode, args ...any) *ChildResponse {
-	var buf bytes.Buffer
-	enc := gob.NewEncoder(&buf)
-	if len(args) > 0 {
-		enc.Encode(args[0])
-	}
+    var buf bytes.Buffer
+    enc := gob.NewEncoder(&buf)
 
-	size := uint32(buf.Len() + 1)
-	sizeBuf := make([]byte, 4)
-	binary.BigEndian.PutUint32(sizeBuf, size)
+    if err := enc.Encode(args); err != nil {
+        panic(err)
+    }
 
-	m.conn.Write(append(sizeBuf, append([]byte{byte(op)}, buf.Bytes()...)...))
-	return &ChildResponse{conn: m.conn}
+    size := uint32(buf.Len() + 1)
+    sizeBuf := make([]byte, 4)
+    binary.BigEndian.PutUint32(sizeBuf, size)
+
+    m.conn.Write(append(sizeBuf, append([]byte{byte(op)}, buf.Bytes()...)...))
+    return &ChildResponse{conn: &m.conn}
 }
+
 
 func (m *Parent) Close() error {
     err := m.sock.Close()
