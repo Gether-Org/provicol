@@ -10,15 +10,15 @@ import (
 
 type void struct{}
 
-type Responder struct {
+type responder struct {
 	conn   *net.Conn
 	mu     sync.Mutex
 	buffer []any
 	sendCh chan void
 }
 
-func newResponder(conn *net.Conn) (*Responder) {
-	r := &Responder{
+func newResponder(conn *net.Conn) (*responder) {
+	r := &responder{
 		buffer: make([]any, 0),
 		conn:   conn,
 		sendCh: make(chan void, 1),
@@ -27,20 +27,20 @@ func newResponder(conn *net.Conn) (*Responder) {
 	return r
 }
 
-func (r *Responder) Reply(x any) {
+func (r *responder) reply(x any) {
 	r.mu.Lock()
 	r.buffer = append(r.buffer, x)
 	r.mu.Unlock()
 }
 
-func (r *Responder) Flush() {
+func (r *responder) flush() {
 	select {
 	case r.sendCh <- void{}:
 	default:
 	}
 }
 
-func (r *Responder) flusher() {
+func (r *responder) flusher() {
 	for range r.sendCh {
 		r.mu.Lock()
 		if len(r.buffer) == 0 {
