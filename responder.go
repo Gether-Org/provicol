@@ -56,9 +56,9 @@ func (r *responder) flusher() {
 			}
 		}
 
-		size := uint32(buf.Len())
-		sizeBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(sizeBuf, size)
+		size := uint64(buf.Len())
+		sizeBuf := make([]byte, 8)
+		binary.BigEndian.PutUint64(sizeBuf, size)
 
 		(*r.conn).Write(append(sizeBuf, buf.Bytes()...))
 		r.buffer = nil

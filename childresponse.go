@@ -14,11 +14,11 @@ type ChildResponse struct {
 }
 
 func (r *ChildResponse) Scan(dests ...any) error {
-    sizeBuf := make([]byte, 4)
+    sizeBuf := make([]byte, 8)
     if _, err := io.ReadFull(*r.conn, sizeBuf); err != nil {
         return err
     }
-    size := binary.BigEndian.Uint32(sizeBuf)
+    size := binary.BigEndian.Uint64(sizeBuf)
 
     data := make([]byte, size)
     if _, err := io.ReadFull(*r.conn, data); err != nil {
