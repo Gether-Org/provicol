@@ -44,9 +44,9 @@ func (m *Parent) Ask(op askingBytecode, args ...any) *ChildResponse {
         panic(err)
     }
 
-    size := uint32(buf.Len() + 1)
+    size := uint64(buf.Len() + 1)
     sizeBuf := make([]byte, 4)
-    binary.BigEndian.PutUint32(sizeBuf, size)
+    binary.BigEndian.PutUint64(sizeBuf, size)
 
     m.conn.Write(append(sizeBuf, append([]byte{byte(op)}, buf.Bytes()...)...))
     return &ChildResponse{conn: &m.conn}

@@ -74,14 +74,14 @@ func callUserFunction(fn any, args []any) error {
 
 func (l *Child) Listen() error {
 	for {
-		sizeBuf := make([]byte, 4)
+		sizeBuf := make([]byte, 8)
 		if _, err := io.ReadFull(l.conn, sizeBuf); err != nil {
 			if err == io.EOF {
 				return nil
 			}
 			return err
 		}
-		size := binary.BigEndian.Uint32(sizeBuf)
+		size := binary.BigEndian.Uint64(sizeBuf)
 
 		data := make([]byte, size)
 		if _, err := io.ReadFull(l.conn, data); err != nil {
