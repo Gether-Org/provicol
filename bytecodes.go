@@ -8,4 +8,6 @@ const (
 	ListBuckets
 	ListObjects
 	GetObject
+	PutObject
+	CreateBucket
 )
