@@ -14,28 +14,39 @@ type ChildResponse struct {
 }
 
 func (r *ChildResponse) Scan(dests ...any) error {
-    sizeBuf := make([]byte, 8)
-    if _, err := io.ReadFull(*r.conn, sizeBuf); err != nil {
-        return err
-    }
-    size := binary.BigEndian.Uint64(sizeBuf)
+	headerBuf := make([]byte, 16)
+	if _, err := io.ReadFull(*r.conn, headerBuf); err != nil {
+		return fmt.Errorf("failed to read packet header: %w", err)
+	}
 
-    data := make([]byte, size)
-    if _, err := io.ReadFull(*r.conn, data); err != nil {
-        return err
-    }
+	magic := binary.BigEndian.Uint32(headerBuf[0:4])
+	if magic != MAGIC_NUMBER {
+		return fmt.Errorf("protocol corruption: invalid magic number (got 0x%x)", magic)
+	}
 
-    buf := bytes.NewBuffer(data)
-    dec := gob.NewDecoder(buf)
+	size := binary.BigEndian.Uint64(headerBuf[4:12])
+	isError := binary.BigEndian.Uint32(headerBuf[12:16])
 
-    for _, d := range dests {
-        if err := dec.Decode(d); err != nil {
-            return err
-        }
-    }
+	data := make([]byte, size)
+	if _, err := io.ReadFull(*r.conn, data); err != nil {
+		return fmt.Errorf("failed to read packet payload: %w", err)
+	}
 
-    if buf.Len() != 0 {
-        return fmt.Errorf("buffer has remaining data (%d bytes)", buf.Len())
-    }
-    return nil
+	if isError != 0 {
+		return fmt.Errorf("remote error: %s", string(data))
+	}
+
+	buf := bytes.NewBuffer(data)
+	dec := gob.NewDecoder(buf)
+
+	for _, d := range dests {
+		if err := dec.Decode(d); err != nil {
+			return fmt.Errorf("failed to decode gob data: %w", err)
+		}
+	}
+
+	if buf.Len() != 0 {
+		return fmt.Errorf("buffer has remaining unread data (%d bytes)", buf.Len())
+	}
+	return nil
 }

@@ -16,9 +16,9 @@ type Parent struct {
 	conn net.Conn
 }
 
-func NewParent(socketPath string, perms os.FileMode) (*Parent, error) {
-    var err error
-    p := &Parent{}
+func NewParent(socketPath string, perms os.FileMode) (p *Parent, err error) {
+    p = &Parent{}
+    err = nil
     _ = os.Remove(socketPath)
 
     p.sock, err = net.Listen("unix", socketPath)

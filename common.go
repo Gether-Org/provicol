@@ -12,3 +12,5 @@ const (
 	CreateBucket
 	SyncBucket
 )
+
+const MAGIC_NUMBER uint32 = 0x1b505643

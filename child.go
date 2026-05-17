@@ -44,7 +44,7 @@ func callUserFunction(fn any, args []any) error {
     if t.Kind() != reflect.Func {
         return fmt.Errorf("Bind: handler must be a function")
     }
-    if t.NumOut() != 1 || !t.Out(0).Implements(reflect.TypeOf((*error)(nil)).Elem()) {
+    if t.NumOut() != 1 || !t.Out(0).Implements(reflect.TypeFor[error]()) {
         return fmt.Errorf("Bind: handler must return exactly 1 error")
     }
     if len(args) != t.NumIn() {
@@ -100,16 +100,24 @@ func (l *Child) Listen() error {
 				return err
 			}
 
-			if err := callUserFunction(cb, args); err != nil {
-				return err
+			err := callUserFunction(cb, args)
+			if err != nil {
+				l.responder.err = err
 			}
 			l.responder.flush()
+			if err != nil {
+				return err
+			}
 		}
 	}
 }
 
 func (c *Child) Reply(v any) {
     c.responder.reply(v)
+}
+
+func (c *Child) Error(what error) {
+	c.responder.throw(what)
 }
 
 func (c *Child) Flush() {

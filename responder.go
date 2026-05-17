@@ -15,9 +15,10 @@ type responder struct {
 	mu     sync.Mutex
 	buffer []any
 	sendCh chan void
+	err    error
 }
 
-func newResponder(conn *net.Conn) (*responder) {
+func newResponder(conn *net.Conn) *responder {
 	r := &responder{
 		buffer: make([]any, 0),
 		conn:   conn,
@@ -33,6 +34,12 @@ func (r *responder) reply(x any) {
 	r.mu.Unlock()
 }
 
+func (r *responder) throw(what error) {
+	r.mu.Lock()
+	r.err = what
+	r.mu.Unlock()
+}
+
 func (r *responder) flush() {
 	select {
 	case r.sendCh <- void{}:
@@ -41,27 +48,43 @@ func (r *responder) flush() {
 }
 
 func (r *responder) flusher() {
-	for range r.sendCh {
-		r.mu.Lock()
-		if len(r.buffer) == 0 {
-			r.mu.Unlock()
-			continue
-		}
+    header := make([]byte, 16)
+    binary.BigEndian.PutUint32(header[0:4], MAGIC_NUMBER)
 
-		var buf bytes.Buffer
-		enc := gob.NewEncoder(&buf)
-		for _, v := range r.buffer {
-			if err := enc.Encode(v); err != nil {
-				continue
-			}
-		}
+    for range r.sendCh {
+        r.mu.Lock()
 
-		size := uint64(buf.Len())
-		sizeBuf := make([]byte, 8)
-		binary.BigEndian.PutUint64(sizeBuf, size)
+        localBuffer := r.buffer
+        localErr := r.err
+        
+        r.buffer = nil
+        r.err = nil
+        r.mu.Unlock()
 
-		(*r.conn).Write(append(sizeBuf, buf.Bytes()...))
-		r.buffer = nil
-		r.mu.Unlock()
-	}
+        var dataBuf []byte
+        var isError uint32
+
+        if localErr != nil {
+            isError = 1
+            dataBuf = []byte(localErr.Error())
+        } else {
+            isError = 0
+            var buf bytes.Buffer
+            enc := gob.NewEncoder(&buf)
+            for _, v := range localBuffer {
+                if err := enc.Encode(v); err != nil {
+                    continue
+                }
+            }
+            dataBuf = buf.Bytes()
+        }
+
+        binary.BigEndian.PutUint64(header[4:12], uint64(len(dataBuf)))
+        binary.BigEndian.PutUint32(header[12:16], isError)
+
+        packet := append(header, dataBuf...)
+        if _, err := (*r.conn).Write(packet); err != nil {
+            return 
+        }
+    }
 }
