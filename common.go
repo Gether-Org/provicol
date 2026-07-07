@@ -19,6 +19,6 @@ const (
 
 const (
 	// date used for layour of GetObjectInfos
-	provicolDateLayout        = "2006-01-02 15:04:05"
+	ProvicolDateLayout        = "2006-01-02 15:04:05"
 	magicNumber        uint32 = 0x1b505643
 )
