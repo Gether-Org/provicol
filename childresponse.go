@@ -20,7 +20,7 @@ func (r *ChildResponse) Scan(dests ...any) error {
 	}
 
 	magic := binary.BigEndian.Uint32(headerBuf[0:4])
-	if magic != MAGIC_NUMBER {
+	if magic != magicNumber {
 		return fmt.Errorf("protocol corruption: invalid magic number (got 0x%x)", magic)
 	}
 

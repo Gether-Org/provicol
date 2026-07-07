@@ -49,7 +49,7 @@ func (r *responder) flush() {
 
 func (r *responder) flusher() {
     header := make([]byte, 16)
-    binary.BigEndian.PutUint32(header[0:4], MAGIC_NUMBER)
+    binary.BigEndian.PutUint32(header[0:4], magicNumber)
 
     for range r.sendCh {
         r.mu.Lock()
