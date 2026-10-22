@@ -2,11 +2,11 @@ package provicol
 
 import (
 	"bytes"
-	"encoding/binary"
 	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"reflect"
 )
 
@@ -38,58 +38,57 @@ func (l *Child) Bind(op askingBytecode, fn any) {
 }
 
 func callUserFunction(fn any, args []any) error {
-    v := reflect.ValueOf(fn)
-    t := v.Type()
+	v := reflect.ValueOf(fn)
+	t := v.Type()
 
-    if t.Kind() != reflect.Func {
-        return fmt.Errorf("Bind: handler must be a function")
-    }
-    if t.NumOut() != 1 || !t.Out(0).Implements(reflect.TypeFor[error]()) {
-        return fmt.Errorf("Bind: handler must return exactly 1 error")
-    }
-    if len(args) != t.NumIn() {
-        return fmt.Errorf("Bind: expected %d args, got %d", t.NumIn(), len(args))
-    }
+	if t.Kind() != reflect.Func {
+		return fmt.Errorf("Bind: handler must be a function")
+	}
+	if t.NumOut() != 1 || !t.Out(0).Implements(reflect.TypeFor[error]()) {
+		return fmt.Errorf("Bind: handler must return exactly 1 error")
+	}
+	if len(args) != t.NumIn() {
+		return fmt.Errorf("Bind: expected %d args, got %d", t.NumIn(), len(args))
+	}
 
-    callArgs := make([]reflect.Value, len(args))
-    for i := 0; i < t.NumIn(); i++ {
-        expected := t.In(i)
-        got := reflect.ValueOf(args[i])
-        if !got.Type().AssignableTo(expected) {
-            return fmt.Errorf(
-                "Bind: argument %d wrong type: expected %s, got %s",
-                i, expected, got.Type(),
-            )
-        }
-        callArgs[i] = got
-    }
+	callArgs := make([]reflect.Value, len(args))
+	for i := 0; i < t.NumIn(); i++ {
+		expected := t.In(i)
+		got := reflect.ValueOf(args[i])
+		if !got.Type().AssignableTo(expected) {
+			return fmt.Errorf(
+				"Bind: argument %d wrong type: expected %s, got %s",
+				i, expected, got.Type(),
+			)
+		}
+		callArgs[i] = got
+	}
 
-    out := v.Call(callArgs)
-    if !out[0].IsNil() {
-        return out[0].Interface().(error)
-    }
-    return nil
+	out := v.Call(callArgs)
+	if !out[0].IsNil() {
+		return out[0].Interface().(error)
+	}
+	return nil
 }
-
 
 func (l *Child) Listen() error {
 	for {
-		sizeBuf := make([]byte, 8)
-		if _, err := io.ReadFull(l.conn, sizeBuf); err != nil {
+		payload, file, err := readPacket(l.conn, 8)
+		if err != nil {
 			if err == io.EOF {
 				return nil
 			}
 			return err
 		}
-		size := binary.BigEndian.Uint64(sizeBuf)
-
-		data := make([]byte, size)
-		if _, err := io.ReadFull(l.conn, data); err != nil {
-			return err
+		if len(payload) < 1 {
+			if file != nil {
+				_ = file.Close()
+			}
+			return fmt.Errorf("request payload is empty")
 		}
 
-		opcode := askingBytecode(data[0])
-		payload := data[1:]
+		opcode := askingBytecode(payload[0])
+		payload = payload[1:]
 
 		if cb, ok := l.megaMap[opcode]; ok {
 			buf := bytes.NewBuffer(payload)
@@ -97,10 +96,19 @@ func (l *Child) Listen() error {
 
 			var args []any
 			if err := dec.Decode(&args); err != nil {
+				if file != nil {
+					_ = file.Close()
+				}
 				return err
 			}
 
+			if file != nil {
+				args = append(args, file)
+			}
 			err := callUserFunction(cb, args)
+			if file != nil {
+				_ = file.Close()
+			}
 			if err != nil {
 				l.responder.err = err
 			}
@@ -108,12 +116,19 @@ func (l *Child) Listen() error {
 			if err != nil {
 				return err
 			}
+		} else if file != nil {
+			_ = file.Close()
 		}
 	}
 }
 
 func (c *Child) Reply(v any) {
-    c.responder.reply(v)
+	c.responder.reply(v)
+}
+
+// ReplyFD attaches a file descriptor to the next response.
+func (c *Child) ReplyFD(file *os.File) error {
+	return c.responder.replyFD(file)
 }
 
 func (c *Child) Error(what error) {
@@ -121,7 +136,7 @@ func (c *Child) Error(what error) {
 }
 
 func (c *Child) Flush() {
-    c.responder.flush()
+	c.responder.flush()
 }
 
 func (c *Child) Close() error {
